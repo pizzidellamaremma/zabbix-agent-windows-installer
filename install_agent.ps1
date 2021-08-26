@@ -1,9 +1,7 @@
-<#
-
-Script di installazione di Zabbix Agent 2
-Versione 2.2
-
-#>
+<#-------------------------------------------------#
+####----  Zabbix Agent 2 Installer for Win  ----####
+#################----  v 2.21  ----#################
+#-------------------------------------------------#>
 
 # Auto-admin restart
 if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) { Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs; exit }
@@ -30,8 +28,26 @@ function CompileFile($ip, $port, $hn, $metadata, $defpath, $confpath, $confname)
     Add-Content -Path "$defpath\$confname" -Value ""
 }
 
+function CompileCommands($defpath) {
+    # create dir in default path
+    New-Item "$defpath" -ItemType directory -Name "commands" | Out-Null
+
+    # create file and append content
+    New-Item "$defpath\commands" -ItemType file -Name "cmd_install.cmd" | Out-Null
+    Add-Content -Path "$defpath\commands\cmd_install.cmd" -Value "$defpath\zabbix_agent2.exe --config $defpath\zabbix_agent2.conf --install"
+
+    New-Item "$defpath\commands" -ItemType file -Name "cmd_run.cmd" | Out-Null
+    Add-Content -Path "$defpath\commands\cmd_run.cmd" -Value "$defpath\zabbix_agent2.exe --config $defpath\zabbix_agent2.conf --start"
+
+    New-Item "$defpath\commands" -ItemType file -Name "cmd_stop.cmd" | Out-Null
+    Add-Content -Path "$defpath\commands\cmd_stop.cmd" -Value "$defpath\zabbix_agent2.exe --config $defpath\zabbix_agent2.conf --stop"
+
+    New-Item "$defpath\commands" -ItemType file -Name "cmd_uninstall.cmd" | Out-Null
+    Add-Content -Path "$defpath\commands\cmd_uninstall.cmd" -Value "$defpath\zabbix_agent2.exe --config $defpath\zabbix_agent2.conf --uninstall"
+}
+
 Clear-Host
-Write-Host -ForegroundColor Yellow "Zabbix Agent 2 configuration creator v1.0" 
+Write-Host -ForegroundColor Yellow "Zabbix Agent 2 configuration creator v2.21" 
 Write-Host ""
 
 
@@ -141,10 +157,7 @@ if ($l -eq $False) {
 
 
 ### Make folders in subdir
-if ((Test-Path "$scriptpath") -eq $False) {
-    
-    New-Item "$scriptpath" -ItemType "directory" | Out-Null
-}
+if ((Test-Path "$scriptpath") -eq $False) {New-Item "$scriptpath" -ItemType "directory" | Out-Null}
 
 
 ### Make folder for custom configs in subdir
@@ -155,11 +168,8 @@ if ((Test-Path "$confpath") -eq $False) {
 }
 
 
-### Copy CMDs for service control
-if ((Test-Path "$defpath\commands") -eq $False) {
-
-    Copy-Item -Path "$PSScriptRoot\commands" -Destination $defpath -Recurse
-}
+### Copy CMDs for service control                                                ### In test crea tutto da zero
+if ((Test-Path "$defpath\commands") -eq $False) {CompileCommands $defpath}
 
 
 ### Copy .exe file
@@ -208,21 +218,21 @@ Start-Sleep -Seconds 2
 ###################  Install and run the service  ###################
 
 try {
-    Start-Process C:\Zabbix\zabbix_agent2.exe -Verb runAs -ArgumentList "--config C:\Zabbix\zabbix_agent2.conf --install" -Wait
+    Start-Process "$defpath\zabbix_agent2.exe" -Verb runAs -ArgumentList "--config $defpath\zabbix_agent2.conf --install" -Wait
     Write-Host "Agent installed successfully!"
-    SC.exe failure "Zabbix Agent 2" reset= 60000 actions= restart/30000/restart/60000/run/90000 command= "C:\Zabbix\commands\cmd_run.cmd"
+    SC.exe failure "Zabbix Agent 2" reset= 60000 actions= restart/30000/restart/60000/restart/90000
     } catch {Write-Host -ForegroundColor Red "cannot install agent service!"}
 
 Start-Sleep -Seconds 2
 
 try {
-    Start-Process C:\Zabbix\zabbix_agent2.exe -Verb runAs -ArgumentList "--config C:\Zabbix\zabbix_agent2.conf --start" -Wait
+    Start-Process "$defpath\zabbix_agent2.exe" -Verb runAs -ArgumentList "--config $defpath\zabbix_agent2.conf --start" -Wait
     Write-Host "Agent started successfully!"
     } catch {Write-Host -ForegroundColor Red "cannot start agent service!"}
 
 
 
-Write-Host "Finished! Run with cmds in C:\Zabbix\commands folder."
+Write-Host "Finished! Run with cmds in $defpath\commands folder."
 Write-Host "Press enter key to exit..."
 Read-Host
 exit
