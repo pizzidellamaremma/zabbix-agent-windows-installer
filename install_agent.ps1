@@ -1,6 +1,7 @@
 <#-------------------------------------------------#
 ####----  Zabbix Agent 2 Installer for Win  ----####
-#################----  v 2.21  ----#################
+#################----  v2.2.1  ----#################
+#########----  by Pizzi della Maremma  ----#########
 #-------------------------------------------------#>
 
 # Auto-admin restart
@@ -9,6 +10,14 @@ if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]:
 ### .conf file creator
 function CompileFile($ip, $port, $hn, $metadata, $defpath, $confpath, $confname) {
     Add-Content -Path "$defpath\$confname" -Value "##### Zabbix Configuration file from Powershell #####"
+    Add-Content -Path "$defpath\$confname" -Value ""
+    Add-Content -Path "$defpath\$confname" -Value ""
+    Add-Content -Path "$defpath\$confname" -Value "## Global settings ##"
+    Add-Content -Path "$defpath\$confname" -Value "LogType=file"
+    Add-Content -Path "$defpath\$confname" -Value "LogFile=$defpath\zabbix_agent2.log"
+    Add-Content -Path "$defpath\$confname" -Value "LogFileSize=1"
+    Add-Content -Path "$defpath\$confname" -Value ""
+    Add-Content -Path "$defpath\$confname" -Value ""
     Add-Content -Path "$defpath\$confname" -Value "## Passive check related ##"
     Add-Content -Path "$defpath\$confname" -Value "Server=$ip"
     Add-Content -Path "$defpath\$confname" -Value "ListenPort=$port"
@@ -36,8 +45,8 @@ function CompileCommands($defpath) {
     New-Item "$defpath\commands" -ItemType file -Name "cmd_install.cmd" | Out-Null
     Add-Content -Path "$defpath\commands\cmd_install.cmd" -Value "$defpath\zabbix_agent2.exe --config $defpath\zabbix_agent2.conf --install"
 
-    New-Item "$defpath\commands" -ItemType file -Name "cmd_run.cmd" | Out-Null
-    Add-Content -Path "$defpath\commands\cmd_run.cmd" -Value "$defpath\zabbix_agent2.exe --config $defpath\zabbix_agent2.conf --start"
+    New-Item "$defpath\commands" -ItemType file -Name "cmd_start.cmd" | Out-Null
+    Add-Content -Path "$defpath\commands\cmd_start.cmd" -Value "$defpath\zabbix_agent2.exe --config $defpath\zabbix_agent2.conf --start"
 
     New-Item "$defpath\commands" -ItemType file -Name "cmd_stop.cmd" | Out-Null
     Add-Content -Path "$defpath\commands\cmd_stop.cmd" -Value "$defpath\zabbix_agent2.exe --config $defpath\zabbix_agent2.conf --stop"
@@ -47,7 +56,7 @@ function CompileCommands($defpath) {
 }
 
 Clear-Host
-Write-Host -ForegroundColor Yellow "Zabbix Agent 2 configuration creator v2.21" 
+Write-Host -ForegroundColor Yellow "Zabbix Agent 2 configuration creator v2.2.1" 
 Write-Host ""
 
 
@@ -105,9 +114,9 @@ If (Get-Service "Zabbix Agent 2" -ErrorAction SilentlyContinue) {
 
 ###################  Create folders and copy files  ###################
 
-$prefix = Read-Host "Client name prefix [same name of the hostgroup, leave blank for 'ISVico']"
-if ($prefix -eq "") {$prefix = "ISVico"}
-$hn = "$prefix $env:computername"
+$prefix = Read-Host "Client name prefix [same name of the host group, leave blank for exclude the prefix]"
+if ($prefix -eq "") {$hn = $env:computername}
+else {$hn = "$prefix $env:computername"}
 
 $ip = Read-Host "IP address of server/proxy"
 
@@ -115,18 +124,20 @@ $port = Read-Host "Port of server/proxy [default 10050]"
 if ($port -eq "") {$port = 10050}
 
 Write-Host ""
-Write-Host "Host metadata need to be the same for all agents to connect automatically to a Autoreg rule on server side."
-Write-Host "(to register the agent to the IS server use 'IS-Sedi-Vico')"
-$metadata = Read-Host "Host metadata (IS-...)"
+Write-Host "Host metadata needs to be the same for all agents to connect automatically to an Autoreg rule on server side."
+Write-Host "[leave blank to not write this line in the conf file]"
+
+$metadata = Read-Host "Host metadata"
 
 
 $defpath = "C:\Zabbix"
 $confname = "zabbix_agent2.conf"
+$exename = "zabbix_agent2.exe"
 $scriptpath = "$defpath\scripts"
 $confpath = "$defpath\customconfigs"
 
 
-### Make dir in C:\
+### Make dir in dafault path
 if ((Test-Path $defpath) -eq $false) {
     New-Item "$defpath" -ItemType "directory" | Out-Null
 }
@@ -162,7 +173,6 @@ if ((Test-Path "$scriptpath") -eq $False) {New-Item "$scriptpath" -ItemType "dir
 
 ### Make folder for custom configs in subdir
 if ((Test-Path "$confpath") -eq $False) {
-
     New-Item "$confpath" -ItemType "directory" | Out-Null
     New-Item "$confpath\place_custom_parameters_here.conf" -ItemType "file" | Out-Null
 }
@@ -173,12 +183,11 @@ if ((Test-Path "$defpath\commands") -eq $False) {CompileCommands $defpath}
 
 
 ### Copy .exe file
-$exename = "zabbix_agent2.exe"
 if ((Test-Path "$defpath\$exename") -eq $False) {
 
-    if ((Test-Path "$PSScriptRoot\zabbix_agent2.exe") -eq $True) {
+    if ((Test-Path "$PSScriptRoot\$exename") -eq $True) {
 
-        Copy-Item -Path "$PSScriptRoot\zabbix_agent2.exe" -Destination "$defpath"
+        Copy-Item -Path "$PSScriptRoot\$exename" -Destination "$defpath"
     }
 }
 
@@ -193,11 +202,12 @@ if ($k) {
 }
 else {
     do {
-        $Prompt = Read-Host "Create firewall rule for inbound connection on TCP 10050? [y/n]"
+        $Prompt = Read-Host "Create firewall rule for inbound connection on TCP $port ? [y/n]"
         Switch ($Prompt) {
             y {
                 try {
                     New-NetFirewallRule -DisplayName "Zabbix Agent TCP inbound connection" -Direction Inbound -LocalPort $port -Protocol TCP -Action Allow
+                    Write-Host -ForegroundColor Green "Firewall rule configured!"
                 }
                 catch {
                     Write-Host -ForegroundColor Red "Error opening port! Check it manually!"
@@ -218,21 +228,25 @@ Start-Sleep -Seconds 2
 ###################  Install and run the service  ###################
 
 try {
-    Start-Process "$defpath\zabbix_agent2.exe" -Verb runAs -ArgumentList "--config $defpath\zabbix_agent2.conf --install" -Wait
-    Write-Host "Agent installed successfully!"
-    SC.exe failure "Zabbix Agent 2" reset= 60000 actions= restart/30000/restart/60000/restart/90000
+    Start-Process "$defpath\$exename" -Verb runAs -ArgumentList "--config $defpath\$confname --install" -Wait
+    Write-Host -ForegroundColor Green "Agent installed successfully!"
+    
     } catch {Write-Host -ForegroundColor Red "cannot install agent service!"}
+try {
+    sc.exe failure "Zabbix Agent 2" reset= 60000 actions= restart/30000/restart/60000/restart/90000
+    Write-Host -ForegroundColor Green "Agent service recovery restarts configured successfully!"
+    } catch {Write-Host -ForegroundColor Red "cannot configure restart retries on agent service!"}
 
 Start-Sleep -Seconds 2
 
 try {
-    Start-Process "$defpath\zabbix_agent2.exe" -Verb runAs -ArgumentList "--config $defpath\zabbix_agent2.conf --start" -Wait
-    Write-Host "Agent started successfully!"
+    Start-Process "$defpath\$exename" -Verb runAs -ArgumentList "--config $defpath\$confname --start" -Wait
+    Write-Host -ForegroundColor Green "Agent started successfully!"
     } catch {Write-Host -ForegroundColor Red "cannot start agent service!"}
 
 
 
-Write-Host "Finished! Run with cmds in $defpath\commands folder."
+Write-Host "Finished! Run with cmds in $defpath\commands folder or from Windows Services page."
 Write-Host "Press enter key to exit..."
 Read-Host
 exit
