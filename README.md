@@ -7,3 +7,5 @@ The script checks if Zabbix Agent 2 is already installed on the client, then ask
 Default config will install Zabbix Agent 2 on C:\Zabbix. To change the directory change the $defpath variable.
 
 The script will ask for a prefix to add before the hostname, that could be useful for multi-site management. Leave it blank to avoid it.
+
+Let me know for parameters to add or modify in the configuration file!
